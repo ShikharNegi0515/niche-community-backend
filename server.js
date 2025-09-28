@@ -1,6 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
-import cors from "cors";  // <-- import cors
+import cors from "cors";
 import connectDB from "./config/db.js";
 
 import authRoutes from "./routes/authRoutes.js";
@@ -13,10 +13,22 @@ connectDB();
 
 const app = express();
 
-// Enable CORS
+// Allowed origins for CORS
+const allowedOrigins = [
+    "http://localhost:5173",                      
+    "https://niche-community-frontend-3qpy.vercel.app" 
+];
+
 app.use(cors({
-    origin: "http://localhost:5173", // allow your frontend
-    credentials: true,               // optional, for cookies/auth
+    origin: function (origin, callback) {
+        // allow requests with no origin (like Postman) or allowed origins
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
+    credentials: true, // allow cookies if needed
 }));
 
 app.use(express.json());
