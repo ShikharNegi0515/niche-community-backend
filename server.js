@@ -8,6 +8,7 @@ import postRoutes from "./routes/postRoutes.js";
 import commentRoutes from "./routes/commentRoutes.js";
 import communityRoutes from "./routes/communityRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -39,6 +40,7 @@ app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/communities", communityRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/users", userRoutes);
 
 app.get("/", (req, res) => {
     res.send("API is running...");
