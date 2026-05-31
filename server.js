@@ -17,20 +17,32 @@ const app = express();
 
 // Allowed origins for CORS
 const allowedOrigins = [
-    "http://localhost:5173",                      
-    "https://niche-community-frontend-3qpy.vercel.app" 
+    "https://niche-community-frontend-3qpy.vercel.app",
 ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        // allow requests with no origin (like Postman) or allowed origins
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error("Not allowed by CORS"));
+        // Allow requests with no origin (Postman, curl, etc.)
+        if (!origin) return callback(null, true);
+
+        // Allow any localhost port in development (Vite auto-increments ports)
+        if (/^http:\/\/localhost:\d+$/.test(origin)) {
+            return callback(null, true);
         }
+
+        // Allow any 127.0.0.1 port as well
+        if (/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) {
+            return callback(null, true);
+        }
+
+        // Check explicit production whitelist
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        callback(new Error("Not allowed by CORS"));
     },
-    credentials: true, // allow cookies if needed
+    credentials: true,
 }));
 
 app.use(express.json());
