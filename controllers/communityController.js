@@ -1,5 +1,6 @@
 import Community from "../models/Community.js";
 import Post from "../models/Post.js";
+import Comment from "../models/Comment.js";
 
 // Create a new community
 export const createCommunity = async (req, res) => {
@@ -55,7 +56,11 @@ export const joinCommunity = async (req, res) => {
         const community = await Community.findById(req.params.id);
         if (!community) return res.status(404).json({ message: "Community not found" });
 
-        if (community.members.includes(req.user._id)) {
+        // Bug fix: use .some() + .toString() for proper ObjectId value comparison
+        const alreadyMember = community.members.some(
+            (memberId) => memberId.toString() === req.user._id.toString()
+        );
+        if (alreadyMember) {
             return res.status(400).json({ message: "Already a member" });
         }
 
@@ -83,7 +88,7 @@ export const leaveCommunity = async (req, res) => {
     }
 };
 
-// Delete a community
+// Delete a community (also cleans up associated posts and comments)
 export const deleteCommunity = async (req, res) => {
     try {
         const community = await Community.findById(req.params.id);
@@ -93,9 +98,17 @@ export const deleteCommunity = async (req, res) => {
             return res.status(401).json({ message: "Not authorized to delete this community" });
         }
 
+        // Bug fix: delete all comments on posts in this community, then the posts themselves
+        const postIds = await Post.find({ community: community._id }).distinct("_id");
+        if (postIds.length > 0) {
+            await Comment.deleteMany({ post: { $in: postIds } });
+            await Post.deleteMany({ community: community._id });
+        }
+
         await community.deleteOne();
         res.json({ message: "Community deleted" });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
+

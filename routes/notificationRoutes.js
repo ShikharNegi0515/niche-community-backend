@@ -11,10 +11,10 @@ const router = express.Router();
 // Get all notifications for logged-in user
 router.get("/", protect, getNotifications);
 
+// Mark all notifications as read (must be BEFORE /:id/read to avoid param conflict)
+router.put("/read-all", protect, markAllAsRead);
+
 // Mark a single notification as read
 router.put("/:id/read", protect, markAsRead);
-
-// Mark all notifications as read
-router.put("/read-all", protect, markAllAsRead);
 
 export default router;
