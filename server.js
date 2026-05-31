@@ -18,6 +18,7 @@ const app = express();
 // Allowed origins for CORS
 const allowedOrigins = [
     "https://niche-community-frontend-3qpy.vercel.app",
+    "https://niche-community-frontend.vercel.app/"
 ];
 
 app.use(cors({
