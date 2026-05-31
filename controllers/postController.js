@@ -26,6 +26,10 @@ export const createPost = async (req, res) => {
             community: communityId,
         });
 
+        // Add post ID to community's posts array
+        community.posts.push(post._id);
+        await community.save();
+
         // Optional: Notify all members of the community except the poster
         const membersToNotify = community.members.filter(
             (id) => id.toString() !== req.user._id.toString()
@@ -98,7 +102,7 @@ export const getPostById = async (req, res) => {
 
         if (!post) return res.status(404).json({ message: "Post not found" });
 
-        const comments = await Comment.find({ postId: post._id })
+        const comments = await Comment.find({ post: post._id })
             .populate("user", "username email")
             .sort({ createdAt: -1 });
 
@@ -139,6 +143,14 @@ export const deletePost = async (req, res) => {
         if (!post) return res.status(404).json({ message: "Post not found" });
         if (post.user.toString() !== req.user._id.toString())
             return res.status(401).json({ message: "Not authorized" });
+
+        // Remove post ID from community's posts array
+        await Community.findByIdAndUpdate(post.community, {
+            $pull: { posts: post._id }
+        });
+
+        // Delete all comments associated with this post
+        await Comment.deleteMany({ post: post._id });
 
         await post.deleteOne();
         res.json({ message: "Post removed" });
