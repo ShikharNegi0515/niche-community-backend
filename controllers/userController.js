@@ -1,43 +1,48 @@
 import User from "../models/User.js";
 
-// @desc    Update user profile
-// @route   PUT /api/users/profile
-// @access  Private
+const formatUser = (user) => ({
+  id: user._id,
+  username: user.username,
+  email: user.email,
+  avatar: user.avatar || "",
+});
+
+export const getProfile = async (req, res) => {
+  res.json(formatUser(req.user));
+};
+
 export const updateProfile = async (req, res) => {
-    try {
-        const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user._id);
 
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
 
-        const { username, email, avatar } = req.body;
+  const { username, email, avatar } = req.body;
 
-        if (email && email !== user.email) {
-            const emailExists = await User.findOne({ email });
-            if (emailExists) {
-                return res.status(400).json({ message: "Email is already in use" });
-            }
-            user.email = email;
-        }
-
-        if (username) {
-            user.username = username;
-        }
-
-        if (avatar !== undefined) {
-            user.avatar = avatar; // base64 string or url
-        }
-
-        const updatedUser = await user.save();
-
-        res.json({
-            id: updatedUser._id,
-            username: updatedUser.username,
-            email: updatedUser.email,
-            avatar: updatedUser.avatar || "",
-        });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+  if (email && email.trim().toLowerCase() !== user.email) {
+    const emailExists = await User.findOne({ email: email.trim().toLowerCase() });
+    if (emailExists) {
+      return res.status(400).json({ message: "Email is already in use" });
     }
+    user.email = email.trim().toLowerCase();
+  }
+
+  if (username?.trim()) {
+    const taken = await User.findOne({
+      username: username.trim(),
+      _id: { $ne: user._id },
+    });
+    if (taken) {
+      return res.status(400).json({ message: "Username already taken" });
+    }
+    user.username = username.trim();
+  }
+
+  if (avatar !== undefined) {
+    user.avatar = avatar;
+  }
+
+  await user.save();
+  res.json(formatUser(user));
 };

@@ -9,6 +9,7 @@ import commentRoutes from "./routes/commentRoutes.js";
 import communityRoutes from "./routes/communityRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 
 dotenv.config();
 connectDB();
@@ -46,7 +47,11 @@ app.use(cors({
     credentials: true,
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
+
+app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/posts", postRoutes);
@@ -56,8 +61,11 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/users", userRoutes);
 
 app.get("/", (req, res) => {
-    res.send("API is running...");
+    res.json({ message: "NicheSphere API is running", docs: "/api/health" });
 });
+
+app.use(notFound);
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

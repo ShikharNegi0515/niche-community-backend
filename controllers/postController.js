@@ -3,158 +3,150 @@ import Community from "../models/Community.js";
 import Comment from "../models/Comment.js";
 import Notification from "../models/Notification.js";
 
-// @desc    Create a new post in a community
-// @route   POST /api/posts
-// @access  Private
+const userFields = "username email avatar";
+const communityFields = "name description";
+
+async function populatePost(query) {
+  return query.populate("user", userFields).populate("community", communityFields);
+}
+
 export const createPost = async (req, res) => {
-    try {
-        const { title, content, communityId } = req.body;
+  const { title, content, communityId } = req.body;
 
-        if (!communityId) {
-            return res.status(400).json({ message: "Community ID is required" });
-        }
+  if (!title?.trim() || !content?.trim() || !communityId) {
+    return res.status(400).json({ message: "Title, content, and community are required" });
+  }
 
-        const community = await Community.findById(communityId);
-        if (!community) {
-            return res.status(404).json({ message: "Community not found" });
-        }
+  const community = await Community.findById(communityId);
+  if (!community) {
+    return res.status(404).json({ message: "Community not found" });
+  }
 
-        const post = await Post.create({
-            title,
-            content,
-            user: req.user._id,
-            community: communityId,
-        });
+  const isMember = community.members.some(
+    (memberId) => memberId.toString() === req.user._id.toString()
+  );
+  if (!isMember) {
+    return res.status(403).json({ message: "Join this community before posting" });
+  }
 
-        // Add post ID to community's posts array
-        community.posts.push(post._id);
-        await community.save();
+  const post = await Post.create({
+    title: title.trim(),
+    content: content.trim(),
+    user: req.user._id,
+    community: communityId,
+  });
 
-        // Optional: Notify all members of the community except the poster
-        const membersToNotify = community.members.filter(
-            (id) => id.toString() !== req.user._id.toString()
-        );
+  community.posts.push(post._id);
+  await community.save();
 
-        for (const memberId of membersToNotify) {
-            await Notification.create({
-                user: memberId,
-                type: "post",
-                message: `${req.user.username} added a new post in ${community.name}`,
-                link: `/posts/${post._id}`,
-            });
-        }
+  const membersToNotify = community.members.filter(
+    (id) => id.toString() !== req.user._id.toString()
+  );
 
-        res.status(201).json(post);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
+  await Promise.all(
+    membersToNotify.map((memberId) =>
+      Notification.create({
+        user: memberId,
+        type: "post",
+        message: `${req.user.username} posted in ${community.name}`,
+        link: `/posts/${post._id}`,
+      })
+    )
+  );
+
+  const populated = await populatePost(Post.findById(post._id));
+  res.status(201).json(populated);
 };
 
-// @desc    Get all posts (optionally filter by community)
-// @route   GET /api/posts?communityId=<id>
-// @access  Private
 export const getPosts = async (req, res) => {
-    try {
-        const { communityId } = req.query;
-        let filter = {};
-        if (communityId) filter.community = communityId;
+  const { communityId } = req.query;
+  const filter = communityId ? { community: communityId } : {};
 
-        const posts = await Post.find(filter)
-            .populate("user", "username email")
-            .populate("community", "name");
+  const community = communityId ? await Community.findById(communityId) : null;
+  if (communityId && !community) {
+    return res.status(404).json({ message: "Community not found" });
+  }
 
-        res.json(posts);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+  if (community) {
+    const isMember = community.members.some(
+      (m) => m.toString() === req.user._id.toString()
+    );
+    if (!isMember) {
+      return res.status(403).json({ message: "Join this community to view posts" });
     }
+  }
+
+  const posts = await populatePost(
+    Post.find(filter).sort({ createdAt: -1 })
+  );
+
+  res.json(posts);
 };
 
-// @desc    Get personalized feed (posts from communities the user joined)
-// @route   GET /api/posts/feed
-// @access  Private
 export const getFeedPosts = async (req, res) => {
-    try {
-        const userCommunities = await Community.find({
-            members: req.user._id,
-        }).select("_id");
+  const userCommunities = await Community.find({ members: req.user._id }).select("_id");
+  const communityIds = userCommunities.map((c) => c._id);
 
-        const communityIds = userCommunities.map((c) => c._id);
+  if (communityIds.length === 0) {
+    return res.json([]);
+  }
 
-        const posts = await Post.find({ community: { $in: communityIds } })
-            .sort({ createdAt: -1 })
-            .populate("user", "username email")
-            .populate("community", "name");
+  const posts = await populatePost(
+    Post.find({ community: { $in: communityIds } }).sort({ createdAt: -1 })
+  );
 
-        res.json(posts);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
+  res.json(posts);
 };
 
-// @desc    Get a single post by ID (with comments)
-// @route   GET /api/posts/:id
-// @access  Private
 export const getPostById = async (req, res) => {
-    try {
-        const post = await Post.findById(req.params.id)
-            .populate("user", "username email")
-            .populate("community", "name");
+  const post = await populatePost(Post.findById(req.params.id));
 
-        if (!post) return res.status(404).json({ message: "Post not found" });
+  if (!post) return res.status(404).json({ message: "Post not found" });
 
-        const comments = await Comment.find({ post: post._id })
-            .populate("user", "username email")
-            .sort({ createdAt: -1 });
-
-        res.json({ post, comments });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+  const community = await Community.findById(post.community._id || post.community);
+  if (community) {
+    const isMember = community.members.some(
+      (m) => m.toString() === req.user._id.toString()
+    );
+    if (!isMember) {
+      return res.status(403).json({ message: "Join this community to view this post" });
     }
+  }
+
+  const comments = await Comment.find({ post: post._id })
+    .populate("user", userFields)
+    .sort({ createdAt: -1 });
+
+  res.json({ post, comments });
 };
 
-// @desc    Update post
-// @route   PUT /api/posts/:id
-// @access  Private
 export const updatePost = async (req, res) => {
-    try {
-        const post = await Post.findById(req.params.id);
+  const post = await Post.findById(req.params.id);
 
-        if (!post) return res.status(404).json({ message: "Post not found" });
-        if (post.user.toString() !== req.user._id.toString())
-            return res.status(401).json({ message: "Not authorized" });
+  if (!post) return res.status(404).json({ message: "Post not found" });
+  if (post.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ message: "Not authorized to edit this post" });
+  }
 
-        post.title = req.body.title || post.title;
-        post.content = req.body.content || post.content;
+  if (req.body.title?.trim()) post.title = req.body.title.trim();
+  if (req.body.content?.trim()) post.content = req.body.content.trim();
 
-        const updatedPost = await post.save();
-        res.json(updatedPost);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
+  await post.save();
+  const populated = await populatePost(Post.findById(post._id));
+  res.json(populated);
 };
 
-// @desc    Delete post
-// @route   DELETE /api/posts/:id
-// @access  Private
 export const deletePost = async (req, res) => {
-    try {
-        const post = await Post.findById(req.params.id);
+  const post = await Post.findById(req.params.id);
 
-        if (!post) return res.status(404).json({ message: "Post not found" });
-        if (post.user.toString() !== req.user._id.toString())
-            return res.status(401).json({ message: "Not authorized" });
+  if (!post) return res.status(404).json({ message: "Post not found" });
+  if (post.user.toString() !== req.user._id.toString()) {
+    return res.status(403).json({ message: "Not authorized to delete this post" });
+  }
 
-        // Remove post ID from community's posts array
-        await Community.findByIdAndUpdate(post.community, {
-            $pull: { posts: post._id }
-        });
+  await Community.findByIdAndUpdate(post.community, { $pull: { posts: post._id } });
+  await Comment.deleteMany({ post: post._id });
+  await post.deleteOne();
 
-        // Delete all comments associated with this post
-        await Comment.deleteMany({ post: post._id });
-
-        await post.deleteOne();
-        res.json({ message: "Post removed" });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
+  res.json({ message: "Post removed" });
 };
